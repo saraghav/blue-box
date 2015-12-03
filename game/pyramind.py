@@ -118,7 +118,7 @@ class Pyramind(object):
     print('        WELCOME TO PYRAMIND!!        ')
     print('The objective of the game is to make ')
     print(' all the numbers in the pyramid equal')
-    print(' to zero (0)')
+    print(' to each other')
     print('\n\n')  
 
   def help(self):
@@ -134,9 +134,11 @@ class Pyramind(object):
 
   def check_game_over(self):
     self.game_over = True
+    # check_element = 0
+    check_element = self.pyramid[0][0]
     for level in self.pyramid:
       for element in level:
-        if element != 0:
+        if element != check_element:
           self.game_over = False
           return
 
