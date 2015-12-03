@@ -31,6 +31,7 @@ class Pyramind(object):
     self.pyramid_base_length = pyramid_base_length
     self.pyramid = list()
     self.game_over = False
+    self.move_count = 0
 
     for level_height, level_length in itertools.izip(range(0, self.pyramid_base_length), range(self.pyramid_base_length, 0, -1)):
       level = list()
@@ -49,6 +50,7 @@ class Pyramind(object):
         if not self.game_over:
           self.cmd = raw_input('Enter command: ')
           self.process_cmd()
+          self.move_count += 1
     else:
       raise Exception('GUI not developed')
 
@@ -143,6 +145,7 @@ class Pyramind(object):
           return
 
     print('O, stunning beautiful mind! I desire thee wisdom!')
+    print('You stole my heart in {0} moves'.format(self.move_count))
 
 def launch_game():
   try:
