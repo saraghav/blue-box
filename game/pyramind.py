@@ -142,7 +142,6 @@ class Pyramind(object):
           self.game_over = False
           return
 
-    print('\n')
     print('O, stunning beautiful mind! I desire thee wisdom!')
 
 def launch_game():
