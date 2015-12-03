@@ -30,6 +30,7 @@ class Pyramind(object):
 
     self.pyramid_base_length = pyramid_base_length
     self.pyramid = list()
+    self.game_over = False
 
     for level_height, level_length in itertools.izip(range(0, self.pyramid_base_length), range(self.pyramid_base_length, 0, -1)):
       level = list()
@@ -38,13 +39,16 @@ class Pyramind(object):
       self.pyramid.append(level)
 
     if not self.use_gui:
-      while True:
+      while not self.game_over:
         self.clear_screen()
         self.welcome()
         self.help()
         self.display_pyramid()
-        self.cmd = raw_input('Enter command: ')
-        self.process_cmd()
+        self.check_game_over()
+
+        if not self.game_over:
+          self.cmd = raw_input('Enter command: ')
+          self.process_cmd()
     else:
       raise Exception('GUI not developed')
 
@@ -58,6 +62,8 @@ class Pyramind(object):
       self.rotate_pyramid(Direction.anticlockwise)
     elif len(add_cmd) > 0:
       self.add_number_to_row(*add_cmd[0])
+    elif self.cmd == 'ananth is awesome':
+      self.pyramid = [ [0 for element in level] for level in self.pyramid ]
 
   def rotate_pyramid(self, direction):
     rotated_pyramid = list()
@@ -124,7 +130,18 @@ class Pyramind(object):
     print('\ta. numbers wrap around when added. e.g. 9+2 = 1 (not 11), 5+8 = 3 (not 13)')
     print('\tb. row numbers start from the bottom. i.e. bottom row = row number 1, and increases going up')
     print('\t   for e.g. try using the command \'1 1\'. the bottom row should be incremented by 1')
-    print('\n\n')  
+    print('\n\n')
+
+  def check_game_over(self):
+    self.game_over = True
+    for level in self.pyramid:
+      for element in level:
+        if element != 0:
+          self.game_over = False
+          return
+
+    print('\n')
+    print('O, stunning beautiful mind! I desire thee wisdom!')
 
 def launch_game():
   try:
