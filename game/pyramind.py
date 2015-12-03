@@ -28,9 +28,9 @@ class Pyramind(object):
       self.pyramid.append(level)
 
     while True:
-      self.display_pyramid()
-      a = raw_input('Enter value: ')
       self.clear_screen()
+      self.display_pyramid()
+      a = raw_input('Enter command: ')
       
 
   def debug_display_pyramid(self):
