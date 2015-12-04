@@ -32,6 +32,7 @@ class Pyramind(object):
     self.pyramid = list()
     self.game_over = False
     self.move_count = 0
+    self.previous_moves = [None] * 5
 
     for level_height, level_length in itertools.izip(range(0, self.pyramid_base_length), range(self.pyramid_base_length, 0, -1)):
       level = list()
@@ -44,6 +45,9 @@ class Pyramind(object):
         self.clear_screen()
         self.welcome()
         self.help()
+        print('previous moves:')
+        pprint(self.previous_moves)
+        print('')
         self.display_pyramid()
         self.check_game_over()
 
@@ -57,6 +61,7 @@ class Pyramind(object):
   def process_cmd(self):
     add_cmd_regex = re.compile('^(\d+)\s+(\d+)$')
     add_cmd = add_cmd_regex.findall(self.cmd)
+    valid_cmd = True
 
     if self.cmd == 'c':
       self.rotate_pyramid(Direction.clockwise)
@@ -66,6 +71,12 @@ class Pyramind(object):
       self.add_number_to_row(*add_cmd[0])
     elif self.cmd == 'ananth is awesome':
       self.pyramid = [ [0 for element in level] for level in self.pyramid ]
+    else:
+      valid_cmd = False
+
+    if valid_cmd:
+      self.previous_moves.append(self.cmd)
+      self.previous_moves.pop(0)
 
   def rotate_pyramid(self, direction):
     rotated_pyramid = list()
