@@ -3,7 +3,7 @@
 #include <cstring>
 using namespace std;
 
-uint32_t find_dsubseq(char const& sequence[], int const& size, uint32_t const& dsubseq_count_mod);
+uint32_t find_dsubseq(char const sequence[], int const& size, uint32_t const& dsubseq_count_mod);
 
 int main(int argc, char *argv[]) {
   // T : number of testcases (strings)
@@ -28,10 +28,16 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-uint32_t find_dsubseq(char const& sequence[], int const& size, uint32_t const& dsubseq_count_mod) {
+uint32_t find_dsubseq(char const sequence[], int const& size, uint32_t const& dsubseq_count_mod) {
   // dsubseq_count[ starting from index i ][ subsequence of length j ]
-  uint32_t dsubseq_count[size+1];
+  int64_t dsubseq_count[size+1];
   memset(dsubseq_count, 0, sizeof(dsubseq_count[0])*(size+1));
+
+  // 26 alphabets
+  int last_seen[26];
+  for (int i=0; i<26; i++) {
+    last_seen[i] = -1;
+  }
 
   // the empty subsequence
   dsubseq_count[size] = 1;
@@ -39,21 +45,20 @@ uint32_t find_dsubseq(char const& sequence[], int const& size, uint32_t const& d
   for (int i=size-1; i>=0; i--) {
     dsubseq_count[i] = dsubseq_count[i+1];
 
-    for (int k=i+1; k<=size; k++) {
-      if (k==size) {
-        dsubseq_count[i]++;
-        dsubseq_count[i] %= dsubseq_count_mod;
-        continue;
-      }
+    int last_seen_char = last_seen[ int(sequence[i]-'A') ];
 
-      dsubseq_count[i] += (dsubseq_count[k] - dsubseq_count[k+1]);
-      dsubseq_count[i] %= dsubseq_count_mod;
-
-      if (sequence[k] == sequence[i]) {
-        break;
-      }
+    if (last_seen_char > i) {
+      dsubseq_count[i] += (dsubseq_count[i+1] - dsubseq_count[last_seen_char+1]);
+      dsubseq_count[i] = ( (dsubseq_count[i] % dsubseq_count_mod) + dsubseq_count_mod ) % dsubseq_count_mod;
+    } else {
+      dsubseq_count[i] += dsubseq_count[i+1];
+      dsubseq_count[i] = ( (dsubseq_count[i] % dsubseq_count_mod) + dsubseq_count_mod ) % dsubseq_count_mod;
     }
+
+    last_seen[ int(sequence[i]-'A') ] = i;
   }
+
+  dsubseq_count[0] = ( (dsubseq_count[0] % dsubseq_count_mod) + dsubseq_count_mod ) % dsubseq_count_mod;
 
   // for debug
   bool debug_table = false;
@@ -78,10 +83,10 @@ uint32_t find_dsubseq(char const& sequence[], int const& size, uint32_t const& d
 
     printf("    ");
     for (int j=0; j<size; j++) {
-      printf("%4u", dsubseq_count[j]);
+      printf("%4ld", dsubseq_count[j]);
     }
     printf("\n");
   }
 
-  return dsubseq_count[0];
+  return (uint32_t)dsubseq_count[0];
 }
