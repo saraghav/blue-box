@@ -19,15 +19,15 @@ int main(int argc, char *argv[]) {
   // number of distinct increasing subsequences
   //   for the sequence starting from index i,
   //   of length j, is incdseq_count[i][j]
-  uint32_t incdseq_count[N+1][K+1];
-  memset(incdseq_count, 0, sizeof(uint32_t)*(N+1)*(K+1));
-  uint32_t const incdseq_count_mod = 5000000;
+  int64_t incdseq_count[N+1][K+1];
+  memset(incdseq_count, 0, sizeof(incdseq_count[0][0])*(N+1)*(K+1));
+  int64_t const incdseq_count_mod = 5000000;
 
   for (int32_t K_iter=1 ; K_iter<=K ; K_iter++) {
     for (int32_t N_iter=N-1 ; N_iter>=0 ; N_iter--) {
       // if number of elements being considered is less
       //   than desired subsequence length
-      if ( (N-N_iter+1) < K_iter ) {
+      if ( (N-N_iter) < K_iter ) {
         continue;
       }
 
@@ -50,23 +50,23 @@ int main(int argc, char *argv[]) {
         }
       } else {
         for (int32_t i=N_iter+1 ; i<=N-K_iter+1 ; i++) {
-          if ( sequence[i] > sequence[N_iter] && incdseq_count[i][K_iter-1] > incdseq_count[i+1][K_iter-1] ) {
+          if ( (sequence[i] > sequence[N_iter]) && (incdseq_count[i][K_iter-1] > incdseq_count[i+1][K_iter-1]) ) {
             incdseq_count[N_iter][K_iter] += (incdseq_count[i][K_iter-1] - incdseq_count[i+1][K_iter-1]);
-            incdseq_count[N_iter][K_iter] %= incdseq_count_mod;
+            incdseq_count[N_iter][K_iter] = ( (incdseq_count[N_iter][K_iter] % incdseq_count_mod) + incdseq_count_mod ) % incdseq_count_mod;
           } else if (sequence[i] == sequence[N_iter]) {
             break;
           }
         }
       }
 
-      incdseq_count[N_iter][K_iter] %= incdseq_count_mod;
+      incdseq_count[N_iter][K_iter] = ( (incdseq_count[N_iter][K_iter] % incdseq_count_mod) + incdseq_count_mod ) % incdseq_count_mod;
 
       // done
     }
   }
 
   // for debug
-  bool debug_table = false;
+  bool debug_table = true;
   if (debug_table) {
     printf("N = %d, K = %d\n\n", N, K);
 
@@ -91,13 +91,13 @@ int main(int argc, char *argv[]) {
     for (int j=1; j<=K; j++) {
       printf("%4d", j);
       for (int i=0; i<N; i++) {
-        printf("%4u", incdseq_count[i][j]);
+        printf("%4ld", incdseq_count[i][j]);
       }
       printf("\n");
     }
   }
 
-  printf("%u", incdseq_count[0][K]);
+  printf("%ld", incdseq_count[0][K]);
 
   return 0;
 }
