@@ -1,7 +1,7 @@
 CXX = g++
 OPTS = 
 CXXFLAGS = -std=c++11
-ALL = INCSEQ
+ALL = INCSEQ INCSEQ_BIT
 
 all: $(ALL)
 
