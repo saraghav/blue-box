@@ -1,0 +1,3 @@
+vim -p \
+    DiscreteWaveletTransform.py \
+    Haar1D.py \
