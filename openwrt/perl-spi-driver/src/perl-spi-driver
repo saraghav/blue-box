@@ -1,0 +1,438 @@
+#!/usr/bin/perl
+package PERL_SPI_DRIVER;
+my $script_location = get_script_location();
+my $spi_config_file = "$script_location/SPICONFIGFILE.pm";
+require $spi_config_file;
+
+################
+# GLOBAL STUFF #
+################
+my $gpio = "/sys/class/gpio";
+
+my $sclkpath = undef;
+my $mosipath = undef;
+my $misopath = undef;
+my $cspath = undef;
+
+my @mosilog = ();
+my @misolog = ();
+my @sclklog = ();
+my @cslog = ();
+
+if (!%{$SPICONFIGFILE::spiconfigHashRef}) {
+    print "ERROR: \$spiconfigHashRef not defined in $spi_config_file\n";
+    exit(1);
+} else {
+    print "INFO: SPI config file being used is $spi_config_file\n";
+}
+
+my $sclkpin = $SPICONFIGFILE::spiconfigHashRef->{sclkpin};
+my $mosipin = $SPICONFIGFILE::spiconfigHashRef->{mosipin};
+my $misopin = $SPICONFIGFILE::spiconfigHashRef->{misopin};
+my $cspin = $SPICONFIGFILE::spiconfigHashRef->{cspin};
+my $freq = $SPICONFIGFILE::spiconfigHashRef->{freq};
+my $period = 1/$freq if (defined $freq and $freq != 0);
+my $halfperiod = $period/2;
+
+if ($period == 0) {
+    print "ERROR: SPICONFIGFILE freq setting $freq Hz is invalid\n";
+    exit(1);
+}
+
+###############
+# SUBROUTINES #
+###############
+sub main {
+    my ($transaction, $bytes, $cmd) = @_;
+    $bytes = int($bytes);
+    
+    setup_spi();
+    
+    if ( $transaction eq "read" && $#ARGV==1 && $bytes>0) {
+        my $response = spi_read($bytes);
+        print "response = $response\n";
+    } elsif ( $transaction eq "write" && $#ARGV==2 && $bytes>=0 && $cmd =~ m/^0x[0-9a-fA-F]+$/) {
+        my $cmd_bitlength = calculate_bitlength($cmd);
+    
+        my $b_cmd = sprintf("%0${cmd_bitlength}b", hex($cmd));
+        my $response = spi_write($bytes, $b_cmd);
+    
+        print "command = $cmd\n";
+        print "response = $response\n";
+    } else {
+        print "ERROR: Invalid command line arguments\n" if ($ARGV[0] !~ m/help/i);
+        help();
+        exit(1);
+    }
+    
+    draw_transaction();
+}
+
+## START SUBROUTINES - SPI STUFF ##
+
+sub log_spi_state {
+    push(@mosilog, mosi_read());
+    push(@misolog, miso_read());
+    push(@cslog, cs_read());
+    push(@sclklog, sclk_read());
+}
+
+sub setup_spi {
+    $cspath = "$gpio/gpio$cspin";
+    setup_pin($cspin, "out", "CS");
+
+    $sclkpath = "$gpio/gpio$sclkpin";
+    setup_pin($sclkpin, "out", "SCLK");
+    
+    $mosipath = "$gpio/gpio$mosipin";
+    setup_pin($mosipin, "out", "MOSI");
+
+    # first reset miso pin to 0 so that processor
+    # does not pull up MISO line. After, configure
+    # MISO pin for input
+    $misopath = "$gpio/gpio$misopin";
+    setup_pin($misopin, "out", "MISO");
+    miso(0);
+    setup_pin($misopin, "in", "MISO");
+}
+
+sub remove_spi {
+    free_pin($cspin, "out", "CS");
+    free_pin($sclkpin, "out", "SCLK");
+    free_pin($mosipin, "out", "MOSI");
+    free_pin($misopin, "in", "MISO");
+}
+
+sub reset_spi {
+    log_spi_state();
+    delay_ms($halfperiod);
+    cs(1);
+    mosi(1);
+    sclk(1);
+}
+
+sub spi_write {
+    my $bytes = shift;
+    my $b_cmd = shift;
+    my @b_cmd_array = split(m//, $b_cmd);
+    my @b_response_array = ();
+    
+    # transaction start
+    reset_spi();
+
+    log_spi_state();
+    delay_ms($halfperiod);
+    cs(0); # select chip
+
+    # write data first
+    for (my $i=0; $i<=$#b_cmd_array; $i++) {
+        # negedge
+        log_spi_state();
+        delay_ms($halfperiod);
+        sclk(0);
+        mosi($b_cmd_array[$i]);
+
+        # posedge
+        log_spi_state();
+        delay_ms($halfperiod);
+        sclk(1);
+    }
+
+    # now read response
+    for (my $i=0; $i<$bytes*8; $i++) {
+        # nededge
+        log_spi_state();
+        delay_ms($halfperiod);
+        mosi(1);
+        sclk(0);
+
+        # posedge
+        log_spi_state();
+        delay_ms($halfperiod);
+        sclk(1);
+        my $misovalue = miso_read();
+
+        push(@b_response_array, $misovalue);
+    }
+
+    log_spi_state();
+    delay_ms($halfperiod);
+    cs(1); # deselect chip
+
+    my $b_response = join('', @b_response_array);
+    $b_response = "0b" . $b_response;
+
+
+    $response_hexwidth = $bytes*2;
+    my $h_response = sprintf("0x%0${response_hexwidth}x", oct($b_response));
+    
+    reset_spi();
+    # transaction complete
+
+    return $h_response;
+}
+
+sub spi_read {
+    my $bytes = shift;
+    
+    # transaction start
+    reset_spi();
+
+    log_spi_state();
+    delay_ms($halfperiod);
+    cs(0); # select chip
+
+    # now read response
+    for (my $i=0; $i<$bytes*8; $i++) {
+        # nededge
+        log_spi_state();
+        delay_ms($halfperiod);
+        mosi(1);
+        sclk(0);
+
+        # posedge
+        log_spi_state();
+        delay_ms($halfperiod);
+        sclk(1);
+        my $misovalue = miso_read();
+
+        push(@b_response_array, $misovalue);
+    }
+
+    log_spi_state();
+    delay_ms($halfperiod);
+    cs(1); # deselect chip
+
+    my $b_response = join('', @b_response_array);
+    $b_response = "0b" . $b_response;
+
+
+    $response_hexwidth = $bytes*2;
+    my $h_response = sprintf("0x%0${response_hexwidth}x", oct($b_response));
+    
+    reset_spi();
+    # transaction complete
+
+    return $h_response;
+}
+
+## END SUBROUTINES - SPI STUFF ##
+
+## START SUBROUTINES - PIN READ/WRITE ##
+
+sub cs {
+    my $val = shift;
+    my $path = "$cspath/value";
+    my $cmd = "echo $val >> $path" if defined $path;
+    system($cmd);
+}
+
+sub cs_read {
+    my $path = "$cspath/value";
+    my $pinval = `cat $path` if defined $path;
+    chomp($pinval);
+    return $pinval;
+}
+
+sub mosi {
+    my $val = shift;
+    my $path = "$mosipath/value";
+    my $cmd = "echo $val >> $path" if defined $path;
+    system($cmd);
+}
+
+sub mosi_read {
+    my $path = "$mosipath/value";
+    my $pinval = `cat $path` if defined $path;
+    chomp($pinval);
+    return $pinval;
+}
+
+sub miso {
+    my $val = shift;
+    my $path = "$misopath/value";
+    my $cmd = "echo $val >> $path" if defined $path;
+    system($cmd);
+}
+
+sub miso_read {
+    my $path = "$misopath/value";
+    my $pinval = `cat $path` if defined $path;
+    chomp($pinval);
+    return $pinval;
+}
+
+sub sclk {
+    my $val = shift;
+    my $path = "$sclkpath/value";
+    my $cmd = "echo $val >> $path" if defined $path;
+    system($cmd);
+}
+
+sub sclk_read {
+    my $path = "$sclkpath/value";
+    my $pinval = `cat $path` if defined $path;
+    chomp($pinval);
+    return $pinval;
+}
+
+sub setup_pin {
+    my ($pin, $direction, $purpose) = @_;
+
+    my $pinpath = "$gpio/gpio$pin";
+    if (!-d $pinpath) {
+        system("echo $pin > $gpio/export");
+        if (!-d $pinpath) {
+            print "ERROR: Unable to reserve GPIO $pinpath for $purpose\n";
+            exit(1);
+        }
+    }
+
+    my $set_direction = `cat $pinpath/direction`;
+    chomp($set_direction);
+    if ($set_direction ne $direction) {
+        system("echo $direction > $pinpath/direction");
+
+        $set_direction = `cat $pinpath/direction`;
+        chomp($set_direction);
+        if ($set_direction ne $direction) {
+            print "ERROR: Unable to configure GPIO pin $pinpath reserved for $purpose as $direction direction pin\n";
+            exit(1);
+        }
+    }
+}
+
+sub free_pin {
+    my ($pin, $direction, $purpose) = shift;
+
+    my $pinpath = "$gpio/gpio$pin";
+    my $set_direction = `cat $pinpath/direction`;
+    chomp($set_direction);
+    if (-d $pinpath) {
+        system("echo $pin > $gpio/unexport");
+        
+        if (-d $pinpath) {
+            print "ERROR: Unable to free GPIO pin $pinpath reserved for $purpose as $set_direction direction pin\n";
+            exit(1);
+        }
+    }
+}
+
+## END SUBROUTINES - PIN READ/WRITE ##
+
+## START SUBROUTINES - UTILITIES ##
+
+# Calculates bitlength required for command
+# rounded to the nearest byte
+sub calculate_bitlength {
+    my $cmd = shift;
+    $cmd =~ s/^0x//;
+    my @cmd_split = split(m//, $cmd);
+    my $given_hexlength = ($#cmd_split+1);
+    my $needed_bitlength = 0;
+    if ($given_hexlength%2==0) {
+        $needed_bitlength = $given_hexlength*4;
+    } else {
+        $needed_bitlength = $given_hexlength*4 + 4;
+    }
+    return $needed_bitlength;
+}
+
+sub help {
+    print "\$(PATH)/perl-spi-driver help prints this message\n";
+    print "For Write:\n";
+    print "----------\n";
+    print "\$(PATH)/perl-spi-driver write <# bytes in response> <command in hex>\n";
+    print "\t# bytes in response can be any integer >= 0\n";
+    print "\tcommand in hex should start with 0x\n";
+    print "Example usage:\n";
+    print "\tperl-spi-driver write 0 0x43\n";
+    print "\tperl-spi-driver write 2 0x3256\n";
+    print "\n";
+    print "For Read:\n";
+    print "---------\n";
+    print "\$(PATH)/perl-spi-driver read <# bytes in response>\n";
+    print "\t#bytes in response can be any integer > 0\n";
+    print "Example usage:\n";
+    print "\tperl-spi-driver read 2\n";
+}
+
+sub get_script_location {
+    my $script_path = __FILE__;
+    my @script_path_array = split(m/\/+/, $script_path);
+    my $script_path_trim_index = $#script_path_array-1;
+    my @script_directory_array = @script_path_array[0..$script_path_trim_index];
+    my $script_directory = join("/", @script_directory_array);
+    return $script_directory;
+}
+
+sub delay_ms {
+    my $val = shift;
+    $val = sprintf("%f", $val);
+    $val = $val/1000;
+    select(undef, undef, undef, $val);
+}
+
+sub draw_point {
+    my $point = shift;
+    my $width = 2;
+    if ($point == 0) {
+        for (my $i=0; $i<$width; $i++) {
+            print "_";
+        }
+    } elsif ($point == 1) {
+        for (my $i=0; $i<$width; $i++) {
+            print "^";
+        }
+    }
+}
+
+sub draw_array {
+    my $data = shift;
+    my @data = @{$data};
+
+    for my $point (@data) {
+        draw_point($point);
+    }
+}
+
+sub draw_transaction {
+    print "Signal: SCLK\n";
+    draw_array(\@sclklog);
+    print "\n";
+
+    print "Signal: CS\n";
+    draw_array(\@cslog);
+    print "\n";
+
+    print "Signal: MOSI\n";
+    draw_array(\@mosilog);
+    print "\n";
+
+    print "Signal: MISO\n";
+    draw_array(\@misolog);
+    print "\n";
+}
+
+sub printConfig {
+    print "INFO: sclkpin = $sclkpin\n";
+    print "INFO: mosipin = $mosipin\n";
+    print "INFO: misopin = $misopin\n";
+    print "INFO: cspin = $cspin\n";
+    print "INFO: freq = $freq\n";
+}
+
+## END SUBROUTINES - UTILITIES ##
+
+
+# Calls main() function if invoked from command line
+unless (caller) {
+    my $transaction = $ARGV[0];
+    my $bytes = $ARGV[1];
+    my $cmd = $ARGV[2];
+    main($transaction, $bytes, $cmd);
+} else {
+    print "ERROR: Driver does not support being imported at the moment\n";
+    exit(1);
+}
+

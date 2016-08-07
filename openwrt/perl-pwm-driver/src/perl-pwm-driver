@@ -1,0 +1,129 @@
+#!/usr/bin/perl
+package PERL_PWM_DRIVER;
+my $script_location = get_script_location();
+my $pwm_config_file = "$script_location/PWMCONFIGFILE.pm";
+require $pwm_config_file;
+
+################
+# GLOBAL STUFF #
+################
+my $gpio = "/sys/class/gpio";
+
+my $pinpath = undef;
+
+my $pwmpin = $PWMCONFIGFILE::pwmconfig{pwmpin};
+my $freq = $PWMCONFIGFILE::pwmconfig{freq};
+
+$freq = sprintf("%f", $freq);
+my $period = 1/$freq;
+my $halfperiod = $period/2;
+
+###############
+# SUBROUTINES #
+###############
+sub main {
+    my ($duty_cycle, $timeout) = @_;
+
+    # printConfig();
+    setup_pwm();
+    
+    $duty_cycle = sprintf("%f", $duty_cycle);
+    my $ton = ($duty_cycle/100) * ($period*1000); # Ton in ms
+    my $toff = ($period*1000) - $ton;
+    $ton = sprintf("%.0f", $ton);
+    $toff = sprintf("%.0f", $toff);
+    
+    # Ton and Toff in milliseconds
+    # period and timeout in seconds
+    generate_pwm($ton, $toff, $period, $timeout);
+}
+
+sub pin {
+    my $val = shift;
+    my $path = "$pinpath/value";
+    my $cmd = "echo $val >> $path" if defined $path;
+    system($cmd);
+}
+
+sub pin_read {
+    my $path = "$pinpath/value";
+    my $pinval = `cat $path` if defined $path;
+    chomp($pinval);
+    return $pinval;
+}
+
+sub delay_ms {
+    my $val = shift;
+    $val = sprintf("%f", $val);
+    $val = $val/1000;
+    select(undef, undef, undef, $val);
+}
+
+sub printConfig {
+    print "INFO: pwmpin = $pwmpin\n";
+    print "INFO: freq = $freq\n";
+}
+
+sub setup_pwm {
+    $pinpath = "$gpio/gpio$pwmpin";
+    if (!-d $pinpath) {
+        system("echo $pwmpin >> $gpio/export");
+        if (!-d $pinpath) {
+            print "ERROR: Unable to reserve GPIO $pinpath for PWM\n";
+            exit(1);
+        }
+
+        system("echo out >> $pinpath/direction");
+        my $direction = `cat $pinpath/direction`;
+        chomp($direction);
+        if ($direction ne "out") {
+            print "ERROR: Unable to configure GPIO pin $pinpath reserved for PWM as output pin\n";
+            exit(1);
+        }
+    }
+}
+
+sub reset_pwm {
+    delay_ms($halfperiod);
+    pin(0);
+}
+
+sub help {
+    print "\$(PATH)/perl-pwm-driver <duty cycle [0-100]%> timeout\n";
+	print "\tduty cycle is in percentage\n";
+	print "\ttimeout should be at least 1 second OR inf\n";
+	print "To print this message:\n";
+	print "\tperl-pwm-driver help\n";
+	print "Example Usage:\n";
+	print "\tperl-pwm-driver 60 5\n";
+	print "\tperl-pwm-driver 35 inf\n";
+}
+
+sub generate_pwm {
+	my ($ton, $toff, $period, $timeout) = @_;
+
+	reset_pwm();
+	for (my $n=0; $n*$period<$timeout || $timeout eq 'inf'; $n++) {
+	    pin(1);
+	    delay_ms($ton);
+	
+	    pin(0);
+	    delay_ms($toff);
+	}
+	reset_pwm();
+}
+
+# Calls main() function if invoked from command line
+unless (caller) {
+    my $duty_cycle = $ARGV[0];
+    my $timeout = $ARGV[1];
+    if ($#ARGV != 1 || $duty_cycle<0 || $duty_cycle>100 || (int($timeout)<1 && $timeout ne 'inf') ) {
+        print "ERROR: Invalid/missing arguments\n" if ($ARGV[0] !~ m/help/i);
+        help();
+        exit(1);
+    }
+    main($duty_cycle, $timeout);
+} else {
+    print "ERROR: Driver does not support being imported at the moment\n";
+    exit(1);
+}

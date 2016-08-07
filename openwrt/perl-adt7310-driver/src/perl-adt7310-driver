@@ -1,0 +1,284 @@
+#!/usr/bin/perl
+package PERL_ADT7310_DRIVER;
+my $script_location = get_script_location();
+my $driver = "$script_location/perl-spi-driver";
+
+if (!-e $driver) {
+    print "ERROR: SPI Driver not found for device $script_location\n";
+    exit(1);
+}
+
+# require $perl_spi_driver;
+## TODO: Eventually use the perl-spi-driver as an
+## imported package. Much cleaner if done this way
+
+################
+# GLOBAL STUFF #
+################
+my $tempfile = "/tmp/spi_response.txt";
+my $verbose = 0;
+
+my @registers = (
+    {    'name'     => 'Status',
+         'label'    => 'status',
+         'address'  => 0,
+         'bytes'    => 1,
+         'write'    => 0,
+         'read'     => 1,
+    },
+    {    'name'     => 'Configuration',
+         'label'    => 'configuration',
+         'address'  => 1,
+         'bytes'    => 1,
+         'write'    => 1,
+         'read'     => 1,
+    },
+    {    'name'     => 'Temperature value',
+         'label'    => 'temperature',
+         'address'  => 2,
+         'bytes'    => 2,
+         'write'    => 0,
+         'read'     => 1,
+    },
+    {    'name'     => 'ID',
+         'label'    => 'id',
+         'address'  => 3,
+         'bytes'    => 1,
+         'write'    => 0,
+         'read'     => 1,
+    },
+    {    'name'     => 'Tcrit setpoint',
+         'label'    => 'tcrit',
+         'address'  => 4,
+         'bytes'    => 2,
+         'write'    => 1,
+         'read'     => 1,
+    },
+    {    'name'     => 'Thyst setpoint',
+         'label'    => 'thyst',
+         'address'  => 5,
+         'bytes'    => 1,
+         'write'    => 1,
+         'read'     => 1,
+    },
+    {    'name'     => 'Thigh setpoint',
+         'label'    => 'thigh',
+         'address'  => 6,
+         'bytes'    => 2,
+         'write'    => 1,
+         'read'     => 1,
+    },
+    {    'name'     => 'Tlow setpoint',
+         'label'    => 'tlow',
+         'address'  => 7,
+         'bytes'    => 2,
+         'write'    => 1,
+         'read'     => 1,
+    },
+);
+
+
+my %registerLabelMap = (
+    'status'        =>  0,
+    'configuration' =>  1,
+    'temperature'   =>  2,
+    'id'            =>  3,
+    'tcrit'         =>  4,
+    'thyst'         =>  5,
+    'thigh'         =>  6,
+    'tlow'          =>  7,
+);
+
+
+###############
+# SUBROUTINES #
+###############
+sub main {
+    my $operation = shift;
+    my $register_label = shift;
+    my $register_value = shift;
+
+    if ($operation eq 'read') {
+        if ($register_label eq 'all') {
+            foreach $register_label (keys %registerLabelMap) {
+                my $register_index = $registerLabelMap{$register_label};
+                my $register_info_hashRef = $registers[$register_index];
+                if ($register_info_hashRef->{'read'} == 1) {
+                    $register_value = get_register_value($register_info_hashRef, $verbose, $register_label);
+                }
+            }
+        } elsif (defined $registerLabelMap{$register_label}) {
+            my $register_index = $registerLabelMap{$register_label};
+            my $register_info_hashRef = $registers[$register_index];
+            if ($register_info_hashRef->{'read'} == 1) {
+                $register_value = get_register_value($register_info_hashRef, $verbose, $register_label);
+            }
+        } else {
+            print "ERROR: Cannot recognize register $register_label\n";
+            exit(1);
+        }
+    } elsif ($operation eq 'write') {
+        if (defined $registerLabelMap{$register_label}) {
+            my $register_index = $registerLabelMap{$register_label};
+            my $register_info_hashRef = $registers[$register_index];
+            if ($register_info_hashRef->{'write'} == 1) {
+                put_register_value($register_info_hashRef, $register_value, $verbose, $register_label);
+            }
+        } else {
+            print "ERROR: Cannot recognize register $register_label\n";
+        }
+    } else {
+        print "ERROR: Unsupported operation $operation\n";
+        exit(1);
+    }
+}
+
+sub get_response_from_file {
+    my $file = shift;
+    my $display = shift;
+
+    open(FILE, "<$file") or die("ERROR: unable to open $file for reading\n");
+    my @spi_response_array = ();
+    my $spival;
+    while (my $line = <FILE>) {
+        chomp $line;
+        push(@spi_response_array, $line);
+        $line =~ m/^response\s+=\s+(.*)$/;
+        if (defined $1) {
+            $spival = $1;
+        }
+    }
+    close(FILE);
+
+    my $spi_response = join("\n", @spi_response_array);
+    
+    if ($display>0) {
+        print "INFO: spi_response =\n$spi_response\n";
+        print "INFO: spival = $spival\n";
+    }
+
+    return $spival;
+}
+
+sub get_register_value {
+    my $register_info_hashRef = shift;
+    my $display = shift;
+    my $register_label = shift;
+
+    my $name = $register_info_hashRef->{name};
+    my $address = $register_info_hashRef->{address};
+    my $bytes = $register_info_hashRef->{bytes};
+
+    my $b_address = sprintf("%03b", $address);
+    
+    my $transaction = 1; # 1=read, 0=write
+    my $continuous_read_mode = "0";
+    my $b_cmdword_for_read = "0b" . "0" . $transaction . $b_address . $continuous_read_mode . "00";
+    my $h_cmdword_for_read = sprintf("0x%02x", oct($b_cmdword_for_read));
+
+    my $cmd = join(" ", ($driver, "write $bytes $h_cmdword_for_read"));
+    $cmd = $cmd . " > $tempfile";
+    if ($display>0) {
+        print "\n";
+        print "INFO: For register $name\n";
+        print "INFO: Executing $cmd\n";
+    }
+
+    system($cmd);
+    my $value = get_response_from_file($tempfile, $display-1);
+
+    system("echo $value > $script_location/$register_label");
+    if ($display>0) {
+        print "INFO: name = $name, address = $address, bytes = $bytes\n";
+        print "INFO: value = $value\n";
+    }
+
+    return $value;
+}
+
+sub put_register_value {
+    my $register_info_hashRef = shift;
+    my $register_value = shift;
+    my $display = shift;
+    my $register_label = shift;
+
+    my $name = $register_info_hashRef->{name};
+    my $address = $register_info_hashRef->{address};
+    my $bytes = $register_info_hashRef->{bytes};
+
+    my $hex_digits = $bytes*2;
+
+    if ($register_value !~ m/^0[a-zA-Z]/) {
+        # assume decimal number
+        $register_value = sprintf("0x%0${hex_digits}x", $register_value);
+    } elsif ($register_value =~ m/^0x/) {
+        # convert hex to correctly sized hex
+        $register_value = sprintf("0x%0${hex_digits}x", hex($register_value));
+    } elsif ($register_value =~ m/^0b/) {
+        # convert binary to hex
+        $register_value = sprintf("0x%0${hex_digits}x", oct($register_value));
+    } else {
+        print "ERROR: Unsupported register value\n";
+        exit(1);
+    }
+
+    my $b_address = sprintf("%03b", $address);
+    
+    my $transaction = 0; # 1=read, 0=write
+    my $continuous_read_mode = "0";
+    my $b_cmdword_for_write = "0b" . "0" . $transaction . $b_address . $continuous_read_mode . "00";
+    my $h_cmdword_for_write = sprintf("0x%02x", oct($b_cmdword_for_read));
+
+    my $cmd = join(" ", ($driver, "write 0 $h_cmdword_for_write $register_value"));
+    $cmd = $cmd . " > $tempfile";
+    if ($display>0) {
+        print "\n";
+        print "INFO: For register $name\n";
+        print "INFO: Executing $cmd\n";
+    }
+    system($cmd);
+
+    delay_ms(100);
+    my $assigned_value = get_register_value($register_info_hashRef, $display-1, $register_label);
+    if ($assigned_value != $register_value) {
+        print "ERROR: Unable to assign value $register_value to register $name. Current value is $assigned_value\n";
+        exit(1);
+    }
+}
+
+## START SUBROUTINES - UTILITIES ##
+
+sub help {
+    print "TODO\n";
+}
+
+sub get_script_location {
+    my $script_path = __FILE__;
+    my @script_path_array = split(m/\/+/, $script_path);
+    my $script_path_trim_index = $#script_path_array-1;
+    my @script_directory_array = @script_path_array[0..$script_path_trim_index];
+    my $script_directory = join("/", @script_directory_array);
+    return $script_directory;
+}
+
+sub delay_ms {
+    my $val = shift;
+    $val = sprintf("%f", $val);
+    $val = $val/1000;
+    select(undef, undef, undef, $val);
+}
+
+## END SUBROUTINES - UTILITIES ##
+
+
+# Calls main() function if invoked from command line
+unless (caller) {
+    my $operation = $ARGV[0];
+    my $register_label = $ARGV[1];
+    my $register_value = $ARGV[2];
+    main($operation, $register_label, $register_value);
+} else {
+    print "ERROR: Driver does not support being imported at the moment\n";
+    exit(1);
+}
+
