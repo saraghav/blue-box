@@ -1,3 +1,8 @@
+/*
+ * SPOJ: Distinct Increasing Subsequences
+ * http://www.spoj.com/problems/INCDSEQ/
+ */
+
 #include <iostream>
 #include <cstdio>
 #include <cstdint>
