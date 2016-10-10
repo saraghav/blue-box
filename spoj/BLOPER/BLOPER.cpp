@@ -26,22 +26,25 @@ string const get_expression(int const& N, int const& S) {
     sign[1] = '\0'; // always positive
 
     int sum = N*(N+1) / 2;
-    int desired = (sum-S)/2;
+    int desired = (sum-S);
 
-    for (int current_num=N; current_num>1; current_num--) {
-        if (desired <= 1) {
-            break;
-        } else {
-            // because 1 cannot change sign, the smallest pair can only be 2+some_number = desired
-            if (current_num == desired || current_num <= (desired-2)) {
-                sum -= 2*current_num;
-                sign[current_num] = '-';
-                desired = (sum-S)/2;
+    // if not odd
+    if (!(desired&1)) {
+        desired >>= 1;
+        for (int current_num=N; current_num>1; current_num--) {
+            if (desired <= 0) {
+                break;
+            } else {
+                // because 1 cannot change sign, the smallest pair can only be 2+some_number = desired
+                if (current_num == desired || current_num <= (desired-2)) {
+                    desired -= current_num;
+                    sign[current_num] = '-';
+                }
             }
         }
     }
 
-    if (sum == S) {
+    if (desired == 0) {
         return form_expression(sign);
     } else {
         return impossible;
