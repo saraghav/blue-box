@@ -21,11 +21,15 @@ class Random2DRobot(object):
         self.world_x_size = world_x_size
         self.world_y_size = world_y_size
         self.n_particles = n_particles
+        # intervals are in milliseconds
+        self.robot_motion_interval = 1000
+        self.robot_measurement_sample_interval = 200
+        self.particle_filter_interval = 200
 
         # initial robot state
         self.x_loc = world_x_size * np.random.random((1,))
         self.y_loc = world_y_size * np.random.random((1,))
-        self.generate_measurement()
+        self.generate_measurement().send(None)
 
         # intial particles state
         self.particles_x_loc = world_x_size * np.random.random((self.n_particles,))
@@ -34,16 +38,19 @@ class Random2DRobot(object):
 
         # setup graphics
         self.fig, self.ax = plt.subplots()
+        self.ax.set_title('stars = particles, circle = actual robot location, \nX = estimated robot location, triangle = measurement')
         self.ax.set_xlim([0, world_x_size])
         self.ax.set_ylim([0, world_y_size])
         
         self.robot_loc_plot, = self.ax.plot(self.x_loc, self.y_loc, 'o', markersize=30)
+        self.robot_loc_measurement_plot, = self.ax.plot(self.x_loc_measurement, self.y_loc_measurement, '^', markersize=20)
         self.particles_plot, = self.ax.plot(self.particles_x_loc, self.particles_y_loc, '*')
-        self.particles_estimate_plot, = self.ax.plot(self.x_loc_estimate, self.y_loc_estimate, 'x', markersize=30)
+        self.particles_estimate_plot, = self.ax.plot(self.x_loc_estimate, self.y_loc_estimate, 'x', markersize=30, markeredgewidth=10)
 
-        self.robot_animator = animation.FuncAnimation(self.fig, self.animate_robot, self.move_robot, interval=1000, blit=False)
-        self.pfilter_animator = animation.FuncAnimation(self.fig, self.animate_pfilter, self.pfilter_update, interval=100, blit=False)
-        self.pfilter_estimate_animator = animation.FuncAnimation(self.fig, self.animate_pfilter_estimate, self.pfilter_estimate, interval=100, blit=False)
+        self.robot_animator = animation.FuncAnimation(self.fig, self.animate_robot, self.move_robot, interval=self.robot_motion_interval, blit=False)
+        self.robot_measurement_animator = animation.FuncAnimation(self.fig, self.animate_robot_measurement, self.generate_measurement, interval=self.robot_measurement_sample_interval, blit=False)
+        self.pfilter_animator = animation.FuncAnimation(self.fig, self.animate_pfilter, self.pfilter_update, interval=self.particle_filter_interval, blit=False)
+        self.pfilter_estimate_animator = animation.FuncAnimation(self.fig, self.animate_pfilter_estimate, self.pfilter_estimate, interval=self.particle_filter_interval, blit=False)
         plt.show()
         
     def animate_robot(self, _):
@@ -52,6 +59,13 @@ class Random2DRobot(object):
         '''
         self.robot_loc_plot.set_data(self.x_loc, self.y_loc)
         return self.robot_loc_plot,
+
+    def animate_robot_measurement(self, _):
+        '''
+        FuncAnimation function to update the robot measurement location in the plot
+        '''
+        self.robot_loc_measurement_plot.set_data(self.x_loc_measurement, self.y_loc_measurement)
+        return self.robot_loc_measurement_plot,
 
     def animate_pfilter(self, _):
         '''
@@ -72,7 +86,8 @@ class Random2DRobot(object):
         Actual robot movement model - this function is a proxy for real life
         '''
         self.x_loc += (2*np.random.random()-1) * self.world_x_size * 0.2
-        self.y_loc += (2*np.random.random()-1) * self.world_y_size * 0.2
+        # self.y_loc += (2*np.random.random()-1) * self.world_y_size * 0.2
+        self.y_loc += (np.exp(self.x_loc/self.world_x_size) - np.exp(-self.x_loc)) * (2*np.random.random()-1)
         self.snap_location()
         yield
 
@@ -81,15 +96,14 @@ class Random2DRobot(object):
         Actual robot measurement model - this function is a proxy for real life
         '''
         # actual location plus uniform random noise
-        self.x_loc_measurement = self.x_loc + (2*np.random.random()-1) * self.world_x_size * 0.05
-        self.y_loc_measurement = self.y_loc + (2*np.random.random()-1) * self.world_y_size * 0.05
+        self.x_loc_measurement = self.x_loc + (2*np.random.random()-1) * self.world_x_size * 0.1
+        self.y_loc_measurement = self.y_loc + (2*np.random.random()-1) * self.world_y_size * 0.1
+        yield
 
     def pfilter_update(self, prune_motion_update=True):
         '''
         Execute one particle filter prediction step
         '''
-        self.generate_measurement()
-
         # motion update
         particles_x_loc, particles_y_loc = map(np.array, zip(*map(self.motion_update, self.particles_x_loc, self.particles_y_loc)))
         if prune_motion_update:
@@ -125,16 +139,16 @@ class Random2DRobot(object):
         '''
         Robot motion model - how we think the robot would move
         '''
-        x_next = x + (2*np.random.random()-1)*10
-        y_next = y + (2*np.random.random()-1)*10
+        x_next = x + (2*np.random.random()-1)*2
+        y_next = y + (2*np.random.random()-1)*2
         return (x_next, y_next)
 
     def sensor_update(self, x, y, x_meas, y_meas):
         '''
         Robot sensor model - calculate the probability of the measurement, given a location hypothesis
         '''
-        x_stddev = 0.5
-        y_stddev = 0.5
+        x_stddev = 1
+        y_stddev = 1
         x_prob = stats.norm.pdf(x_meas, x, x_stddev)
         y_prob = stats.norm.pdf(y_meas, y, y_stddev)
         return x_prob*y_prob
