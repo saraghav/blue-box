@@ -8,11 +8,11 @@ noise = np.random.uniform(-0.1, 0.1, signal.shape)
 noisy_signal = signal + noise
 
 tf = Haar1D()
-tf.add_signal(noisy_signal)
+tf.add_signal(signal)
 tf.transform(3)
 tf.inverse_transform()
 tf.calculate_multiresolution_representation()
 
-# tf.plot_coeffs_separated()
+tf.plot_coeffs_separated()
 # tf.plot_signal_comparison()
-tf.plot_signal_comparison_multires()
+# tf.plot_signal_comparison_multires()

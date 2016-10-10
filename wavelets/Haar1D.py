@@ -52,26 +52,26 @@ class Haar1D(DiscreteWaveletTransform):
         for i in range(0, len(signal), 2):
             # predict and update operations for a single lifting step
             #   of the Haar 1D transform
-            signal[i+1] = signal[i+1] - self._predict(signal[i])
-            signal[i]   = signal[i] + self._update(signal[i+1])
+            signal[i+1] = self._predict(signal[i]) - signal[i+1]
+            signal[i]   = signal[i] - self._update(signal[i+1])
 
             # normalization step for the Haar 1D transform
             if self.normalize is True:
-                signal[i]   *= np.sqrt(2)
-                signal[i+1] /= np.sqrt(2)
+                signal[i]   /= np.sqrt(2)
+                signal[i+1] *= np.sqrt(2)
         return signal
 
     def drop(self, signal):
         for i in range(0, len(signal), 2):
             # invert the normalization step for the Haar 1D transform
             if self.normalize is True:
-                signal[i]   /= np.sqrt(2)
-                signal[i+1] *= np.sqrt(2)
+                signal[i]   *= np.sqrt(2)
+                signal[i+1] /= np.sqrt(2)
 
             # invert the predict and update operations for a single lifting step
             #   of the Haar 1D transform
-            signal[i]   = signal[i] - self._update(signal[i+1])
-            signal[i+1] = signal[i+1] + self._predict(signal[i])
+            signal[i]   = signal[i] + self._update(signal[i+1])
+            signal[i+1] = self._predict(signal[i]) - signal[i+1]
         return signal
 
     def calculate_multiresolution_representation(self):
