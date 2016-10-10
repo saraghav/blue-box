@@ -8,6 +8,9 @@ import time
 class Random2DRobot(object):
     '''
     A random 2-dimensional robot for demonstrating particle filters
+
+    References:
+    1. https://en.wikipedia.org/wiki/Monte_Carlo_localization
     '''
     
     def __init__(self, world_x_size, world_y_size, n_particles):
